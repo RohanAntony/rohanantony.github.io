@@ -12,4 +12,4 @@ A place to include any other types of information that you'd like to include abo
 
 ### Contact me
 
-[rohanantonymail@gmail.com](mailto:rohanantonymail@gmail.com)
+[rohanantonymail(at)gmail.com](mailto:rohanantonymail(at)gmail.com)
