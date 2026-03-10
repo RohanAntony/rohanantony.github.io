@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Running LiveKit on EKS: Designing a Production-Shaped Environment for Exploration
+title: Running LiveKit on AWS EKS
 ---
 
 # Running LiveKit on EKS: Designing a Production-Shaped Environment for Exploration
