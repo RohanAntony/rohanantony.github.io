@@ -1,6 +1,6 @@
 ---
 layout: post
-title: You're up and running!
+title: Running LiveKit on EKS: Designing a Production-Shaped Environment for Exploration
 ---
 
 # Running LiveKit on EKS: Designing a Production-Shaped Environment for Exploration
