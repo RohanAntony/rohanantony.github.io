@@ -3,7 +3,9 @@ layout: post
 title: Running LiveKit on AWS EKS
 ---
 
-# Running LiveKit on EKS: Designing a Production-Shaped Environment for Exploration
+Coming soon ...
+
+<!-- # Designing a Production-Shaped Environment for Exploration
 
 Most real-time products eventually run into the same moment: the point where prototypes stop being enough. Local demos work beautifully, but the moment multiple users connect across networks, NAT traversal enters the conversation, latency becomes visible, and reliability suddenly matters. That’s where systems like **LiveKit** begin to shine.
 
@@ -186,4 +188,4 @@ LiveKit Documentation
 [https://docs.livekit.io/](https://docs.livekit.io/)
 
 AWS EKS Documentation
-[https://docs.aws.amazon.com/eks/](https://docs.aws.amazon.com/eks/)
+[https://docs.aws.amazon.com/eks/](https://docs.aws.amazon.com/eks/) -->
