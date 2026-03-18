@@ -1,5 +1,3 @@
-# rohanantony.github.io
-Personal Website
 # Astro Starter Kit: Blog
 
 ```sh
