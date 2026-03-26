@@ -4,310 +4,300 @@ description: 'Lorem ipsum dolor sit amet'
 pubDate: 'Mar 26 2026'
 heroImage: '../../assets/phased-context-aware-sdlc.png'
 ---
- 
-AI coding assistants are powerful—but without structure, they introduce new kinds of complexity. When applied to production AWS infrastructure, common issues emerge quickly: bloated context, inconsistent decisions, and unclear progress.
 
-This post outlines a phased, context-aware approach to working with AI—one that mirrors how experienced engineering teams already build systems: deliberately, incrementally, and with clear boundaries.
+# Building Production AWS Infrastructure with AI  
+### Phase-Enforced Context as a System Design Primitive
 
-> **Core idea:** AI performs best not with more context, but with the *right context at the right time*.
+## The Problem
 
----
+Unstructured AI workflows collapse requirements, architecture, and implementation into a single prompt.
 
-## The Challenge
+That ambiguity shows up directly in output:
+- Infrastructure appears during requirements  
+- Architecture shifts during implementation  
+- Context grows while signal degrades  
 
-Using AI for infrastructure and backend development at scale often leads to:
-
-- **Context overload** — Large prompts dilute signal and reduce output quality  
-- **Unclear phases** — Requirements, architecture, and implementation blur together  
-- **Scope drift** — Suggestions appear too early or without grounding  
-- **Inconsistency** — Outputs vary between sessions  
-- **Lack of continuity** — Progress is hard to track and resume  
-
-The result is familiar: too much input, not enough clarity.
+This is not a prompting issue. It’s a lack of boundaries.
 
 ---
 
-## A Different Model: Phase-Driven Development
+## Core Idea
 
-Instead of treating AI as a single-shot generator, this system treats it as a collaborator that operates within clearly defined phases.
+**Context should be assembled, not written—and constrained by phase.**
 
-Each feature moves through a fixed sequence:
+Most AI workflows treat context as a static input.  
+This approach treats it as something constructed dynamically from structured sources.
 
-### 1. Requirements
-Define what needs to be built, without deciding how.
+Instead of giving the model everything, the system:
+- builds context incrementally  
+- limits it to the current phase  
+- injects only relevant domain knowledge  
 
-- Functional and non-functional requirements  
-- Relevant AWS services (high-level only)  
-- No architecture or implementation decisions  
-
----
-
-### 2. Architecture
-Design how the system will work.
-
-- Component interactions and data flow  
-- API structure  
-- Service-level design decisions  
+The result is not just smaller prompts—it’s **bounded, more predictable behavior**.
 
 ---
 
-### 3. Infrastructure
-Translate architecture into deployable resources.
+## The Model
 
-- CloudFormation templates  
-- Security policies  
-- Environment and deployment setup  
+Every feature moves through a fixed sequence:
 
----
+> Requirements → Architecture → Infrastructure → Implementation
 
-### 4. Implementation
-Build the system.
 
-- Lambda handlers and services  
-- Data access layers  
-- Tests and integration points  
+The constraint is deliberate:
 
----
+> The model is given only the context relevant to the current phase.
 
-## Why Phases Matter
+No architecture during requirements.  
+No implementation during infrastructure.  
 
-AI systems don’t reason about intent the way humans do—they respond to context.
-
-Unscoped context leads to:
-- Premature optimization  
-- Mixed abstractions  
-- Inconsistent outputs  
-
-By constraining context to a single phase, you:
-- Reduce ambiguity  
-- Improve determinism  
-- Align outputs with intent  
-
-This is less about prompting better—and more about **designing the interaction model**.
+This is achieved through context isolation—not convention.
 
 ---
 
-## How Context Is Built
+## System Design
 
-### Modular Documentation
+### 1. Context Is Modular
 
-Instead of a single large prompt, the system uses small, focused documents organized by purpose:
+Instead of a monolithic prompt, context is split into focused units:
 
-- Core rules (always included)  
-- Phase-specific guidance  
-- Workflow and process standards  
-- Domain-specific conventions  
+- Core constraints (always loaded)  
+- Phase definitions  
+- Workflow rules  
+- Domain guidelines  
 - AWS service patterns  
 
-This allows context to scale with complexity instead of overwhelming it upfront.
+Only a subset is assembled per run.
+
+> Context becomes a build artifact, not an input.
+
+It is constructed from structured sources based on phase and intent, rather than written ad hoc per interaction.
 
 ---
 
-### Selective AWS Context
+### 2. Context Is Phase-Bound
 
-Relevant AWS service patterns are included based on feature intent.
+Each phase operates at a different level of abstraction:
 
-This avoids:
-- Irrelevant abstractions in early phases  
-- Overfitting architecture to unnecessary services  
+| Phase          | Allowed Output                |
+|----------------|------------------------------|
+| Requirements   | Capabilities, constraints     |
+| Architecture   | Flows, interfaces, schemas    |
+| Infrastructure | CloudFormation, policies      |
+| Implementation | Handlers, services, tests     |
 
-A simple heuristic (keyword detection) covers most cases effectively, without introducing configuration overhead.
+The system withholds information that does not belong to the current phase.
 
----
-
-### State Awareness
-
-Each feature tracks its current phase and progress.
-
-This ensures:
-- Work resumes with full context  
-- Decisions remain consistent across sessions  
-- AI outputs build on prior work instead of resetting  
+This prevents phase leakage—the primary source of inconsistent outputs.
 
 ---
 
-### Workflow Enforcement
+### 3. Context Is Service-Aware
 
-The system embeds engineering discipline directly:
+AWS knowledge is not preloaded.
 
-- Explicit phase transitions  
-- Structured documentation  
-- Controlled commit flow  
-- Separation of concerns  
+It is introduced incrementally based on feature intent.
 
-This turns AI from an ad-hoc tool into part of a repeatable workflow.
+Examples:
+- “auth”, “login” → Cognito patterns  
+- “api”, “endpoint” → API Gateway patterns  
+- “queue”, “event” → SQS / EventBridge patterns  
+
+This avoids contaminating early phases with implementation detail and keeps decisions scoped to the current level of abstraction.
+
+> Infrastructure knowledge is introduced only when it becomes actionable.
 
 ---
 
-## Example: User Authentication System
+### 4. State Lives in the Artifacts
 
-A feature like user authentication progresses cleanly:
+State is not maintained in session memory. It is externalized in structured artifacts.
+
+Each feature document captures:
+- current phase  
+- progress  
+- decisions and changes  
+
+This allows context to be rebuilt consistently across sessions without relying on hidden state.
+
+The system remains stateless at runtime while preserving continuity through explicit, versioned artifacts.
+
+---
+
+### 5. Workflow Is Encoded in Context
+
+Process constraints are embedded directly:
+
+- No commits to `main`  
+- Explicit approval before commit  
+- Single-purpose changes only  
+
+The model is guided by these constraints rather than inferring process implicitly.
+
+---
+
+## What Changes Across Phases
+
+The same feature produces fundamentally different outputs depending on context.
 
 ### Requirements
-- Registration, login, password reset  
-- Token-based authentication  
-- Profile management  
+
+Defines:
+- functional scope  
+- constraints  
+- relevant AWS services (high level)  
+
+No structure, no implementation.
+
+---
 
 ### Architecture
-- API design and flows  
-- Token lifecycle  
-- Data model  
+
+Introduces:
+- component boundaries  
+- API contracts  
+- data models  
+
+Still no infrastructure.
+
+---
 
 ### Infrastructure
-- Authentication configuration  
-- API resources  
-- Storage schema  
+
+Materializes:
+- CloudFormation resources  
+- security policies  
+- deployment structure  
+
+No application logic.
+
+---
 
 ### Implementation
-- Handlers and services  
-- Validation and error handling  
-- AWS integrations  
 
-Each phase builds on the previous one—without overlap.
+Completes:
+- Lambda handlers  
+- data access  
+- validation and error handling  
 
----
+At this point, most decisions are already made.
 
-## Trade-offs
-
-This approach introduces structure—but also overhead.
-
-- **Documentation maintenance** — Modular files require discipline to keep updated  
-- **Heuristic limitations** — Keyword detection can miss edge cases or include unnecessary context  
-- **Strict phase boundaries** — Can slow down rapid prototyping or exploratory work  
-- **Initial setup cost** — The system takes time to establish before delivering value  
-
-For small or one-off projects, this may be unnecessary. Its benefits increase with system complexity and reuse.
+> Implementation shifts toward execution rather than exploration.
 
 ---
 
-## When This Works Well
+## Debugging with Change-Scoped Context
 
-This approach is most effective when:
+The same structure used for development can be applied to debugging.
 
-- Building production systems with multiple components  
-- Working across multiple sessions with AI  
-- Maintaining consistency across features or teams  
-- Prioritizing long-term maintainability over speed  
+Each feature introduces a bounded set of changes:
+- infrastructure definitions  
+- handlers and services  
+- configuration  
 
----
+When a regression appears after a feature is introduced, context can be limited to:
+- the feature document  
+- the current phase  
+- files added or modified by that feature  
 
-## When It Doesn’t
-
-It may not be the right fit when:
-
-- Prototyping quickly or exploring ideas  
-- Building very small or isolated features  
-- The overhead of structure outweighs the benefit of consistency  
+This reduces the debugging surface area to what actually changed.
 
 ---
 
-## Limitations in Practice
+### When This Works
 
-In real usage, a few patterns emerge:
+This approach is effective when the issue is:
+- introduced within the feature  
+- contained within modified components  
+- related to contracts, configuration, or local logic  
 
-- AI can still produce valid but suboptimal architecture if requirements are incomplete  
-- Context selection based on keywords is not perfect—it’s a heuristic, not a guarantee  
-- Strict phase separation requires discipline; skipping ahead introduces gaps  
-
-One common failure mode is incomplete requirements leading to over-engineered architecture. The system helps—but it doesn’t replace good inputs.
-
----
-
-## Comparison to Other Approaches
-
-### Monolithic Prompting
-- Simple but inconsistent  
-- High context cost  
-- Difficult to maintain  
-
-### Freeform AI Iteration
-- Flexible but chaotic  
-- No guarantees of consistency  
-- Hard to resume work  
-
-### Phase-Driven Context (This Approach)
-- Structured and repeatable  
-- Lower context per interaction  
-- Aligns with established engineering workflows  
-
-This is less about replacing prompting—and more about **constraining it effectively**.
+In these cases, limiting context improves signal and speeds up diagnosis.
 
 ---
 
-## Benefits
+### When It Does Not
 
-### Focused Context
-Smaller, relevant inputs improve output quality and reduce noise.
+Not all failures respect feature boundaries.
 
----
+This approach breaks down when:
+- the issue spans shared components  
+- behavior emerges from multiple services  
+- dependencies are indirect or implicit  
 
-### Consistent Architecture
-Every feature follows the same lifecycle:
-- No skipped steps  
-- No mixed concerns  
-
----
-
-### Built-In Best Practices
-Standards are applied automatically:
-- Infrastructure as code  
-- Secure defaults  
-- Consistent service usage  
+In these cases, context must expand beyond the feature.
 
 ---
 
-### Continuity Across Sessions
-Progress is explicit and recoverable.
+### Practical Implication
+
+Feature-scoped context is a useful default, not a guarantee.
+
+It works best when paired with a simple escalation model:
+- start with feature context  
+- expand to system context if needed  
+
+This mirrors how experienced engineers debug:  
+start with what changed, then widen the scope.
 
 ---
 
-### Reduced Cognitive Load
-Developers don’t need to reconstruct context repeatedly.
+## Observations
+
+### Phase Separation Is the Lever
+
+Most inconsistencies in AI output come from mixing abstraction levels.
+
+Strict phase boundaries reduce:
+- premature decisions  
+- conflicting outputs  
+- rework  
 
 ---
 
-## Implementation Overview
+### Context Relevance > Context Size
 
-The system combines:
+Reducing context size helps, but that’s a side effect.
 
-- Modular documentation  
-- A script that assembles context dynamically  
-- Lightweight service detection  
-- A feature document for state tracking  
-
-It remains simple by design—favoring predictable behavior over complexity.
+The real gain comes from:
+> removing information that does not belong to the current phase
 
 ---
 
-## Lessons Learned
+### Determinism Comes from Constraints
 
-### What Works
+Flexible AI workflows feel powerful but introduce drift.
 
-- Clear phase boundaries improve output quality  
-- Smaller context leads to better focus  
-- Simple heuristics are often sufficient  
-- Explicit state tracking prevents confusion  
-
----
-
-### What Doesn’t
-
-- Skipping phases introduces gaps  
-- Mixing concerns reduces clarity  
-- Manual context assembly does not scale  
+Constrained workflows:
+- reduce ambiguity  
+- improve repeatability  
+- produce more predictable outcomes  
 
 ---
 
-## Closing Thoughts
+### State Must Be Explicit
 
-AI is often treated as a generator. In practice, it behaves more like a collaborator—one that requires structure to be effective.
+When state is implicit, sessions reset and context must be reconstructed manually.
 
-By aligning AI workflows with established engineering principles—phased development, scoped context, and incremental progress—you get:
+Externalizing state into artifacts:
+- preserves continuity  
+- enables reproducibility  
+- makes progress inspectable  
 
-- More reliable outputs  
-- Better architectural consistency  
-- A repeatable development model  
+---
 
-Well-structured systems are easier to build and evolve.
+## Closing
 
-The same is true for working with AI.
+AI does not need better prompts.
+
+It needs:
+- clear phase boundaries  
+- controlled context  
+- explicit state  
+- enforced workflows  
+
+This is not a new paradigm—it is standard engineering discipline applied to AI interaction.
+
+The outcome is not just better output. It is **predictable systems**.
+
+> Good infrastructure is built in phases.  
+> AI should be constrained to follow them.
