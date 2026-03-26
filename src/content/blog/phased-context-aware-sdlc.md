@@ -5,11 +5,6 @@ pubDate: 'Mar 26 2026'
 heroImage: '../../assets/phased-context-aware-sdlc.png'
 ---
 
-# Building Production AWS Infrastructure with AI  
-### Phase-Enforced Context as a System Design Primitive
-
-## The Problem
-
 Unstructured AI workflows collapse requirements, architecture, and implementation into a single prompt.
 
 That ambiguity shows up directly in output:
