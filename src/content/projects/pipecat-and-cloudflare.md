@@ -2,7 +2,7 @@
 title: 'Building a Voice AI Bot on Cloudflare Realtime SFU — and How It Compares to LiveKit'
 description: 'Lorem ipsum dolor sit amet'
 pubDate: 'Aug 15 2026'
-heroImage: '../../assets/phased-context-aware-sdlc.png'
+heroImage: '../../assets/pipecat-cloudflare.png'
 ---
 
 Most "voice AI" tutorials hand you a managed platform, a magic SDK, and a bill that scales with per-participant minutes. This post is about the other path: wiring a [Pipecat](https://github.com/pipecat-ai/pipecat) bot to the raw [Cloudflare Realtime SFU](https://developers.cloudflare.com/realtime/) over its new WebSocket media adapter, paying only for bandwidth, and owning the whole media path.

@@ -1,22 +1,127 @@
 ---
+import { Image } from 'astro:assets';
+import { getCollection } from 'astro:content';
 import BaseHead from '../components/BaseHead.astro';
 import Footer from '../components/Footer.astro';
+import FormattedDate from '../components/FormattedDate.astro';
 import Header from '../components/Header.astro';
 import { SITE_DESCRIPTION, SITE_TITLE } from '../consts';
+
+const posts = (await getCollection('blog')).sort(
+	(a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
+);
 ---
 
 <!doctype html>
 <html lang="en">
 	<head>
 		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
+		<style>
+			main {
+				width: 960px;
+			}
+			ul {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 2rem;
+				list-style-type: none;
+				margin: 0;
+				padding: 0;
+			}
+			ul li {
+				width: calc(50% - 1rem);
+			}
+			ul li * {
+				text-decoration: none;
+				transition: 0.2s ease;
+			}
+			ul li:first-child {
+				width: 100%;
+				margin-bottom: 1rem;
+				text-align: center;
+			}
+			ul li:first-child img {
+				width: 100%;
+			}
+			ul li:first-child .title {
+				font-size: 2.369rem;
+			}
+			ul li img {
+				margin-bottom: 0.5rem;
+				border-radius: 12px;
+			}
+			ul li p {
+				margin-top: 0.5rem;
+				margin-bottom: 0.5rem;
+				color: rgb(var(--black));
+			}
+			.desc {
+				opacity: 0.6;
+				font-size: 0.85em;
+			}
+			ul li a {
+				display: block;
+			}
+			.title {
+				margin: 0.5em 0 0.5em 0;
+				color: rgb(var(--black));
+				line-height: 1;
+			}
+			.date {
+				margin: 0;
+				color: rgb(var(--black));
+			}
+			ul li[data-astro-image] {
+				display: flex;
+			}
+
+			ul li[data-astro-image] img {
+				height: 260px;
+				width: 260px;
+				object-fit: cover;
+				object-position: center;
+				border-radius: 12px;
+			}
+
+			ul li[data-astro-image] .contents {
+				flex-grow: 1;
+			}
+
+			ul li[data-astro-image] .contents {
+				padding-left: 2em;
+			}
+		</style>
 	</head>
 	<body>
 		<Header />
 		<main>
-			<h1>Hi, there!</h1>
-			<p>
-				Welcome to my personal website built with Astro.
-			</p>
+			<section>
+				<ul>
+					{
+						posts.map((post) => (
+							<li data-astro-image={post.data.heroImage?.src}>
+								<a href={`/blog/${post.id}/`}>
+									{post.data.heroImage && (
+										<img
+											width={260}
+											height={260}
+											src={post.data.heroImage.src}
+											alt={post.data.title}
+										/>
+									)}
+									<div class="contents">
+										<h4 class="title">{post.data.title}</h4>
+										<p class="date">
+											<FormattedDate date={post.data.pubDate} />
+										</p>
+										<p class="desc">{post.data.description}</p>
+									</div>
+								</a>
+							</li>
+						))
+					}
+				</ul>
+			</section>
 		</main>
 		<Footer />
 	</body>
