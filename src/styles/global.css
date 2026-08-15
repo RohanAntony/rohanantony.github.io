@@ -170,3 +170,26 @@ hr {
 	/* added line to stop words getting smushed together (as they go onto separate lines and some screen readers do not understand line feeds as a space */
 	white-space: nowrap;
 }
+
+/* Mermaid Diagram Styling */
+.mermaid {
+	display: flex;
+	justify-content: center;
+	margin: 2em 0;
+}
+
+.mermaid svg {
+	background-color: transparent;
+	max-width: 100%;
+	height: auto;
+}
+
+.mermaidTooltip {
+	background-color: rgb(var(--gray-light)) !important;
+	border: 1px solid rgb(var(--gray)) !important;
+	color: rgb(var(--black)) !important;
+	border-radius: 4px;
+	padding: 0.5em !important;
+	font-family: 'Inter', sans-serif;
+	font-size: 0.85em;
+}
