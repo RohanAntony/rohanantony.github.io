@@ -46,12 +46,30 @@ const { title, description, image = FallbackImage } = Astro.props;
 		theme: 'dark',
 		securityLevel: 'loose',
 	});
-	document.addEventListener('DOMContentLoaded', () => {
+
+	const renderMermaidBlocks = () => {
+		const blocks = document.querySelectorAll('pre.mermaid, pre.language-mermaid, code.language-mermaid');
+		blocks.forEach((block) => {
+			const text = block.textContent?.trim() ?? '';
+			if (!text) return;
+
+			const target = document.createElement('div');
+			target.className = 'mermaid';
+			target.textContent = text;
+			block.replaceWith(target);
+		});
+
 		const nodes = document.querySelectorAll('.mermaid');
 		nodes.forEach((node) => {
 			mermaid.run({ nodes: [node] });
 		});
-	});
+	};
+
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', renderMermaidBlocks);
+	} else {
+		renderMermaidBlocks();
+	}
 </script>
 
 <!-- Primary Meta Tags -->
