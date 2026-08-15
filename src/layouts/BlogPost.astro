@@ -1,5 +1,4 @@
 ---
-import { Image } from 'astro:assets';
 import type { CollectionEntry } from 'astro:content';
 import BaseHead from '../components/BaseHead.astro';
 import Footer from '../components/Footer.astro';
@@ -8,7 +7,7 @@ import Header from '../components/Header.astro';
 
 type Props = CollectionEntry<'blog'>['data'];
 
-const { title, description, pubDate, updatedDate, heroImage } = Astro.props;
+const { title, description, pubDate, updatedDate } = Astro.props;
 ---
 
 <html lang="en">
@@ -16,41 +15,49 @@ const { title, description, pubDate, updatedDate, heroImage } = Astro.props;
 		<BaseHead title={title} description={description} />
 		<style>
 			main {
-				width: calc(100% - 2em);
+				width: calc(100% - 1em);
 				max-width: 100%;
 				margin: 0;
-			}
-			.hero-image {
-				width: 100%;
-			}
-			.hero-image img {
-				display: block;
-				margin: 0 auto;
-				border-radius: 12px;
-				box-shadow: var(--box-shadow);
+				padding: 0;
 			}
 			.prose {
-				width: 720px;
-				max-width: calc(100% - 2em);
+				width: 900px;
+				max-width: calc(100% - 1em);
 				margin: auto;
-				padding: 1em;
-				color: rgb(var(--gray-dark));
+				padding: 0 0.5em 3em 0.5em;
+				color: rgb(var(--black));
 			}
 			.title {
-				margin-bottom: 1em;
-				padding: 1em 0;
+				margin-bottom: 2.5em;
+				padding-bottom: 1.5em;
 				text-align: center;
-				line-height: 1;
+				line-height: 1.3;
+				border-bottom: 1px solid rgb(var(--gray-light));
 			}
 			.title h1 {
-				margin: 0 0 0.5em 0;
+				margin: 0 0 0.4em 0;
+				font-size: 2.8em;
 			}
 			.date {
-				margin-bottom: 0.5em;
+				margin-bottom: 0.8em;
 				color: rgb(var(--gray));
+				font-size: 0.95em;
+				font-family: 'Inter', sans-serif;
+				letter-spacing: 0.05em;
 			}
 			.last-updated-on {
 				font-style: italic;
+				margin-top: 0.4em;
+			}
+
+			@media (max-width: 900px) {
+				.prose {
+					width: 100%;
+					padding: 0 0.5em 2em 0.5em;
+				}
+				.title h1 {
+					font-size: 2em;
+				}
 			}
 		</style>
 	</head>
@@ -59,9 +66,6 @@ const { title, description, pubDate, updatedDate, heroImage } = Astro.props;
 		<Header />
 		<main>
 			<article>
-				<div class="hero-image">
-					{heroImage && <Image width={1020} height={510} src={heroImage} alt="" />}
-				</div>
 				<div class="prose">
 					<div class="title">
 						<div class="date">

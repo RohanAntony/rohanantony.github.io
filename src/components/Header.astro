@@ -11,9 +11,9 @@ import HeaderLink from './HeaderLink.astro';
 			<HeaderLink href="/projects">Projects</HeaderLink>
 		</div>
 		<div class="social-links">
-			<a href="https://github.com/rohanantony" target="_blank">
-				<span class="sr-only">Go to Astro's GitHub repo</span>
-				<svg viewBox="0 0 16 16" aria-hidden="true" width="32" height="32"
+			<a href="https://github.com/rohanantony" target="_blank" class="social-link">
+				<span class="sr-only">Go to Rohan's GitHub repo</span>
+				<svg viewBox="0 0 16 16" aria-hidden="true" width="28" height="28"
 					><path
 						fill="currentColor"
 						d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"
@@ -26,39 +26,82 @@ import HeaderLink from './HeaderLink.astro';
 <style>
 	header {
 		margin: 0;
-		padding: 0 1em;
-		background: white;
-		box-shadow: 0 2px 8px rgba(var(--black), 5%);
+		padding: 1.2em 0.5em;
+		background-color: #0f0f0f;
+		border-bottom: 1px solid rgb(var(--gray-light));
 	}
 	h2 {
 		margin: 0;
-		font-size: 1em;
+		font-size: 1.2em;
+		font-family: 'Inter', sans-serif;
+		font-weight: 600;
+		letter-spacing: 0.05em;
 	}
 
 	h2 a,
 	h2 a.active {
 		text-decoration: none;
+		border: none;
+		color: rgb(var(--black));
 	}
+
+	h2 a:hover {
+		color: var(--accent);
+		border: none;
+	}
+
 	nav {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
+		max-width: 900px;
+		margin: 0 auto;
+		width: 100%;
 	}
+
+	.internal-links {
+		display: flex;
+		gap: 1.5em;
+	}
+
 	nav a {
-		padding: 1em 0.5em;
-		color: var(--black);
-		border-bottom: 4px solid transparent;
+		padding: 0;
+		color: rgb(var(--black));
+		border-bottom: none;
 		text-decoration: none;
+		font-family: 'Inter', sans-serif;
+		font-size: 0.9em;
+		letter-spacing: 0.05em;
+		transition: color 0.2s ease;
 	}
+
+	nav a:hover {
+		color: var(--accent);
+	}
+
 	nav a.active {
 		text-decoration: none;
-		border-bottom-color: var(--accent);
+		border-bottom-color: transparent;
+		color: var(--accent);
 	}
+
 	.social-links,
 	.social-links a {
 		display: flex;
+		align-items: center;
 	}
-	@media (max-width: 720px) {
+
+	.social-link {
+		color: rgb(var(--black));
+		padding: 0;
+		transition: color 0.2s ease;
+	}
+
+	.social-link:hover {
+		color: var(--accent);
+	}
+
+	@media (max-width: 900px) {
 		.social-links {
 			display: none;
 		}

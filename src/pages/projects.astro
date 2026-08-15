@@ -18,77 +18,64 @@ const projects = (await getCollection('projects')).sort(
 		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
 		<style>
 			main {
-				width: 960px;
+				width: 900px;
+				max-width: calc(100% - 1em);
 			}
 			ul {
 				display: flex;
-				flex-wrap: wrap;
-				gap: 2rem;
+				flex-direction: column;
+				gap: 1.5rem;
 				list-style-type: none;
 				margin: 0;
 				padding: 0;
 			}
 			ul li {
-				width: calc(50% - 1rem);
-			}
-			ul li * {
-				text-decoration: none;
-				transition: 0.2s ease;
-			}
-			ul li:first-child {
 				width: 100%;
-				margin-bottom: 1rem;
-				text-align: center;
-			}
-			ul li:first-child img {
-				width: 100%;
-			}
-			ul li:first-child .title {
-				font-size: 2.369rem;
-			}
-			ul li img {
-				margin-bottom: 0.5rem;
-				border-radius: 12px;
-			}
-			ul li p {
-				margin-top: 0.5rem;
-				margin-bottom: 0.5rem;
-				color: rgb(var(--black));
-			}
-			.desc {
-				opacity: 0.6;
-				font-size: 0.85em;
 			}
 			ul li a {
+				text-decoration: none;
+				border: none;
 				display: block;
+				padding: 1em 0;
+				border-bottom: 1px solid rgb(var(--gray-light));
+				transition: opacity 0.2s ease;
+			}
+			ul li a:hover {
+				border: none;
+				opacity: 0.7;
+			}
+			ul li a:hover .title {
+				color: var(--accent);
 			}
 			.title {
-				margin: 0.5em 0 0.5em 0;
+				margin: 0;
 				color: rgb(var(--black));
-				line-height: 1;
+				line-height: 1.3;
+				font-family: 'Crimson Text', 'Georgia', serif;
+				font-size: 1.5em;
+				font-weight: 600;
+				transition: color 0.2s ease;
+				margin-bottom: 0.3em;
 			}
 			.date {
 				margin: 0;
-				color: rgb(var(--black));
-			}
-			ul li[data-astro-image] {
-				display: flex;
-			}
-
-			ul li[data-astro-image] img {
-				height: 260px;
-				width: 260px;
-				object-fit: cover;
-				object-position: center;
-				border-radius: 12px;
+				color: rgb(var(--gray));
+				font-size: 0.85em;
+				font-family: 'Inter', sans-serif;
+				letter-spacing: 0.02em;
 			}
 
-			ul li[data-astro-image] .contents {
-				flex-grow: 1;
-			}
-
-			ul li[data-astro-image] .contents {
-				padding-left: 2em;
+			@media (max-width: 900px) {
+				main {
+					width: 100%;
+					padding: 0 0.5em;
+				}
+				ul li a {
+					padding: 1em 0;
+				}
+				.title {
+					font-size: 1.3em;
+				}
 			}
 		</style>
 	</head>
@@ -99,23 +86,12 @@ const projects = (await getCollection('projects')).sort(
 				<ul>
 					{
 						projects.map((project) => (
-							<li data-astro-image={project.data.heroImage?.src}>
+							<li>
 								<a href={`/projects/${project.id}/`}>
-									{project.data.heroImage && (
-										<img
-											width={260}
-											height={260}
-											src={project.data.heroImage.src}
-											alt={project.data.title}
-										/>
-									)}
-									<div class="contents">
-										<h4 class="title">{project.data.title}</h4>
-										<p class="date">
-											<FormattedDate date={project.data.pubDate} />
-										</p>
-										<p class="desc">{project.data.description}</p>
-									</div>
+									<h4 class="title">{project.data.title}</h4>
+									<p class="date">
+										<FormattedDate date={project.data.pubDate} />
+									</p>
 								</a>
 							</li>
 						))
