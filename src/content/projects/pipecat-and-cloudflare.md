@@ -33,16 +33,16 @@ A browser talks to a speech-to-speech bot (Azure OpenAI GPT Realtime) in real ti
 
 <div class="mermaid">
 flowchart LR
-    Browser["Browser<br/>(client)"]
-    SFU["Cloudflare<br/>Realtime SFU"]
-    Bot["Bot server<br/>(Pipecat)"]
-    Proxy["Express signaling proxy<br/>(keeps CF_APP_SECRET private)"]
-    Azure["Azure GPT<br/>Realtime"]
+    Browser["Browser"]
+    SFU["Cloudflare SFU"]
+    Bot["Bot server"]
+    Proxy["Signaling proxy"]
+    Azure["Azure GPT"]
 
     Browser <-->|WebRTC| SFU
     SFU <-->|WebSocket PCM| Bot
     Browser -->|REST signaling| Proxy
-    Proxy -->|REST adapter mgmt| SFU
+    Proxy -->|Adapter management| SFU
     Bot <--> Azure
 </div>
 
@@ -136,10 +136,10 @@ This is where the WebSocket-adapter architecture gets interesting — and where 
 
 <div class="mermaid">
 flowchart LR
-    User["user<br/>(WebRTC)"] --> Edge["nearest<br/>Cloudflare edge"]
+    User["User"] --> Edge["Nearest Cloudflare edge"]
     Edge --> SFU["SFU"]
-    SFU --> Adapter["WebSocket<br/>adapter"]
-    Adapter --> Bot["bot"]
+    SFU --> Adapter["WebSocket adapter"]
+    Adapter --> Bot["Bot"]
 </div>
 
 The user→edge hop is genuinely global: the SFU "runs on Cloudflare's global cloud network in hundreds of cities worldwide." So a user in Singapore hits a nearby Cloudflare edge regardless of where your bot lives. The latency-sensitive question is the **adapter → bot** leg — if your only bot is in Virginia and your user is in Sydney, that trans-Pacific hop is added on *top* of the LLM round-trip.
