@@ -2,7 +2,6 @@
 title: 'The Trust–Control Shift in Software Development'
 description: 'Lorem ipsum dolor sit amet'
 pubDate: 'Mar 01 2026'
-heroImage: '../../assets/control-trust-vibe-coding.jpg'
 ---
 
 Software development is undergoing a subtle but profound transformation. What was once a discipline rooted in precise control is steadily evolving into one defined by trust. This shift is not abrupt; rather, it continues a long trajectory of abstraction that has shaped the field since its inception. Today, that trajectory converges with AI-assisted development practices—often described as “vibe coding”—to redefine how software is conceived, built, and maintained.
