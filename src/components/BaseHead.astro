@@ -39,16 +39,19 @@ const { title, description, image = FallbackImage } = Astro.props;
 <link rel="canonical" href={canonicalURL} />
 
 <!-- Mermaid Diagrams -->
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <script>
-	if (typeof mermaid !== 'undefined') {
-		mermaid.initialize({
-			startOnLoad: true,
-			theme: 'dark',
-			securityLevel: 'loose',
+	import mermaid from 'mermaid';
+	mermaid.initialize({
+		startOnLoad: false,
+		theme: 'dark',
+		securityLevel: 'loose',
+	});
+	document.addEventListener('DOMContentLoaded', () => {
+		const nodes = document.querySelectorAll('.mermaid');
+		nodes.forEach((node) => {
+			mermaid.run({ nodes: [node] });
 		});
-		mermaid.contentLoaded();
-	}
+	});
 </script>
 
 <!-- Primary Meta Tags -->

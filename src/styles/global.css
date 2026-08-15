@@ -176,12 +176,21 @@ hr {
 	display: flex;
 	justify-content: center;
 	margin: 2em 0;
+	padding: 1em;
+	background: rgba(255, 255, 255, 0.02);
+	border: 1px solid rgb(var(--gray-light));
+	border-radius: 12px;
+	overflow-x: auto;
 }
 
 .mermaid svg {
 	background-color: transparent;
 	max-width: 100%;
 	height: auto;
+}
+
+.mermaid .label {
+	color: rgb(var(--black)) !important;
 }
 
 .mermaidTooltip {

@@ -31,7 +31,7 @@ Read on for the full architecture, the four silent-failure bugs, and the detaile
 
 A browser talks to a speech-to-speech bot (Azure OpenAI GPT Realtime) in real time. The twist is the transport: instead of a voice-AI platform SDK, the media rides Cloudflare's SFU, and Cloudflare bridges it to my Python bot over a plain WebSocket carrying PCM.
 
-```mermaid
+<div class="mermaid">
 flowchart LR
     Browser["Browser<br/>(client)"]
     SFU["Cloudflare<br/>Realtime SFU"]
@@ -44,7 +44,7 @@ flowchart LR
     Browser -->|REST signaling| Proxy
     Proxy -->|REST adapter mgmt| SFU
     Bot <--> Azure
-```
+</div>
 
 Three moving parts:
 
@@ -134,13 +134,13 @@ Both platforms optimize for the same thing — get media onto a global backbone 
 
 This is where the WebSocket-adapter architecture gets interesting — and where the docs leave you on your own. The full media path is:
 
-```mermaid
+<div class="mermaid">
 flowchart LR
     User["user<br/>(WebRTC)"] --> Edge["nearest<br/>Cloudflare edge"]
     Edge --> SFU["SFU"]
     SFU --> Adapter["WebSocket<br/>adapter"]
     Adapter --> Bot["bot"]
-```
+</div>
 
 The user→edge hop is genuinely global: the SFU "runs on Cloudflare's global cloud network in hundreds of cities worldwide." So a user in Singapore hits a nearby Cloudflare edge regardless of where your bot lives. The latency-sensitive question is the **adapter → bot** leg — if your only bot is in Virginia and your user is in Sydney, that trans-Pacific hop is added on *top* of the LLM round-trip.
 
