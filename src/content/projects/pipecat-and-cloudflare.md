@@ -1,12 +1,8 @@
----
-title: 'Building a Voice AI Bot on Cloudflare Realtime SFU — and How It Compares to LiveKit'
-description: 'Lorem ipsum dolor sit amet'
-pubDate: 'Aug 15 2026'
----
+# Building a Voice AI Bot on Cloudflare Realtime SFU — and How It Compares to LiveKit
 
 Most "voice AI" tutorials hand you a managed platform, a magic SDK, and a bill that scales with per-participant minutes. This post is about the other path: wiring a [Pipecat](https://github.com/pipecat-ai/pipecat) bot to the raw [Cloudflare Realtime SFU](https://developers.cloudflare.com/realtime/) over its new WebSocket media adapter, paying only for bandwidth, and owning the whole media path.
 
-I'll walk through the architecture I built, the four things that broke, the uncomfortable fact that the adapter is beta, the production architecture I'd actually ship, and then a grounded comparison against [LiveKit](https://livekit.com/) — the obvious alternative — on the two axes that decide these projects: **latency** and **cost**. Because LiveKit is open source, I treat it as *two* options throughout: **LiveKit Cloud** (managed) and **self-hosted LiveKit** (you run the SFU).
+I'll walk through the architecture I built, what I learned along the way, the uncomfortable fact that the adapter is beta, the production architecture I'd actually ship, and then a grounded comparison against [LiveKit](https://livekit.com/) — the obvious alternative — on the two axes that decide these projects: **latency** and **cost**. Because LiveKit is open source, I treat it as *two* options throughout: **LiveKit Cloud** (managed) and **self-hosted LiveKit** (you run the SFU).
 
 ## TL;DR
 
@@ -14,7 +10,7 @@ I'll walk through the architecture I built, the four things that broke, the unco
 
 **The catch:** The WebSocket adapter is **beta** — the API may change. The Cloudflare SFU itself is GA; only this specific bridge isn't. For production today, the safer path is having the bot join the SFU as a real WebRTC peer via aiortc (same Cloudflare, same cost story, just more code).
 
-**Cost story:** Cloudflare bills on egress bandwidth only — **$0.05/GB with 1 TB free**, no per-minute meters. LiveKit Cloud adds per-minute meters (agent + participant minutes) that dominate the bill at ~**$0.63/hour** vs. Cloudflare's \~**$0.035/hour** for transport. Self-hosted LiveKit removes those meters but puts servers and ops on you; it wins on cheap-egress infra (Hetzner/DigitalOcean), loses on AWS/GCP where bandwidth costs more than Cloudflare's managed rate. In all cases, the **LLM dwarfs the transport** (~$2–4/hour for Azure/OpenAI GPT Realtime vs. cents for the SFU).
+**Cost story:** Cloudflare bills on egress bandwidth only — **$0.05/GB with 1 TB free**, no per-minute meters. LiveKit Cloud adds per-minute meters (agent + participant minutes) that dominate the bill at \~**$0.63/hour** vs. Cloudflare's \~**$0.035/hour** for transport. Self-hosted LiveKit removes those meters but puts servers and ops on you; it wins on cheap-egress infra (Hetzner/DigitalOcean), loses on AWS/GCP where bandwidth costs more than Cloudflare's managed rate. In all cases, the **LLM dwarfs the transport** (\~$2–4/hour for Azure/OpenAI GPT Realtime vs. cents for the SFU).
 
 **Latency:** All three are edge-optimized WebRTC SFUs and feel similar when deployed close to users. The real bottleneck is the LLM, not the transport.
 
@@ -23,7 +19,7 @@ I'll walk through the architecture I built, the four things that broke, the unco
 - **Self-hosted LiveKit** — want LiveKit's SDK ergonomics, have ops capacity, running on budget infra
 - **Cloudflare + Pipecat** — own the media path, no per-minute meters, comfortable with beta APIs and writing transport code (this post is your map)
 
-Read on for the full architecture, the four silent-failure bugs, and the detailed cost/latency breakdown.
+Read on for the full architecture, what I learned building it, and the detailed cost/latency breakdown.
 
 ---
 
@@ -31,20 +27,7 @@ Read on for the full architecture, the four silent-failure bugs, and the detaile
 
 A browser talks to a speech-to-speech bot (Azure OpenAI GPT Realtime) in real time. The twist is the transport: instead of a voice-AI platform SDK, the media rides Cloudflare's SFU, and Cloudflare bridges it to my Python bot over a plain WebSocket carrying PCM.
 
-```mermaid
-flowchart LR
-    Browser["Browser"]
-    SFU["Cloudflare SFU"]
-    Bot["Bot server"]
-    Proxy["Signaling proxy"]
-    Azure["Azure GPT"]
-
-    Browser <-->|WebRTC| SFU
-    SFU <-->|WebSocket PCM| Bot
-    Browser -->|REST signaling| Proxy
-    Proxy -->|Adapter management| SFU
-    Bot <--> Azure
-```
+![Architecture diagram showing browser, Cloudflare Realtime SFU, bot server, Express signaling proxy, and Azure GPT Realtime connections](../../assets/pipecat-cloudflare-arch.png)
 
 Three moving parts:
 
@@ -59,18 +42,19 @@ The interesting bit is Cloudflare's [WebSocket media transport adapter](https://
 
 The wire format is fixed: **48 kHz, stereo, interleaved, 16-bit signed little-endian PCM**, max 32 KB per message. Azure Realtime, meanwhile, speaks **24 kHz mono**. So the transport does the sample-rate and channel bridging in both directions.
 
-## The four things that broke
+## What I learned building it
 
-Getting audio flowing end-to-end surfaced four bugs, none of which threw an error — just silence:
+The path to working audio wasn't one breakthrough — it was a series of silent failures. Nothing crashed; things just didn't work. A few lessons that saved (and cost) me time:
 
-1. **The output transport never became "ready."** Pipecat's `BaseOutputTransport` only creates its default media sender when `set_transport_ready()` runs. Without it, every frame was dropped with `destination [None] not registered`.
-2. **Mono where stereo was required.** Pipecat resamples rates but never converts channel count. I had to explicitly upmix 24 kHz mono → 48 kHz stereo in `write_audio_frame`.
-3. **Wrong frame size.** Cloudflare's frames are 3840-byte payloads (20 ms at 48 kHz stereo). Pipecat defaulted to 40 ms chunks. Setting `audio_out_10ms_chunks=2` aligned the cadence.
-4. **The actual silence culprit was client-side.** `pc.ontrack` was registered *after* the pull renegotiation's `setRemoteDescription()` — but the track event fires *during* that call, so it was missed. Moving the handler up fixed playback instantly.
+**Silence is the hardest error to debug.** The first two hours were spent on a pipeline that looked correct but produced nothing. Pipecat's output transport silently drops frames if it hasn't been marked ready. No exception, no warning — just frames disappearing into a void. Reading the framework code, not just the docs, is the move.
 
-The protobuf framing also differs by direction: egress sends the full `Packet`; buffer-mode ingest sends payload-only (which, in Cloudflare's reference code, is just a `Packet` with the zero-valued seq/timestamp fields omitted by proto3).
+**Format mismatches compound.** The WebSocket adapter speaks 48 kHz stereo PCM. Azure Realtime speaks 24 kHz mono. Pipecat handles sample rate conversion but not channel count, so I had to bridge that myself. Neither side was wrong — they just spoke different dialects, and the adapter between them had to be explicit about every conversion.
 
-## The uncomfortable part: the adapter is beta
+**Browser event ordering matters more than you'd expect.** The last piece of silence was client-side. A WebRTC track event fires *during* `setRemoteDescription()`, so registering the `ontrack` handler a few lines too late means you miss it entirely. Moving the handler up fixed playback instantly — and was a good reminder that async browser APIs have real sequencing constraints.
+
+The broader takeaway: when you're assembling raw pieces (SFU + WebSocket bridge + Pipecat + Azure Realtime), there's no framework to catch mismatches for you. The glue code is where the bugs live.
+
+## One important caveat: the adapter is beta
 
 The most important caveat in this whole post: **the WebSocket adapter this project relies on is beta.** The docs say so plainly — *"WebSocket adapter is in beta. The API may change."* That doesn't mean "Cloudflare isn't production-ready" — it means *this specific bridge* isn't. It's worth pulling the two apart:
 
@@ -134,13 +118,7 @@ Both platforms optimize for the same thing — get media onto a global backbone 
 
 This is where the WebSocket-adapter architecture gets interesting — and where the docs leave you on your own. The full media path is:
 
-```mermaid
-flowchart LR
-    User["User"] --> Edge["Nearest Cloudflare edge"]
-    Edge --> SFU["SFU"]
-    SFU --> Adapter["WebSocket adapter"]
-    Adapter --> Bot["Bot"]
-```
+![Media flow diagram showing user connecting to nearest Cloudflare edge, through SFU, WebSocket adapter, to bot](../../assets/pipecat-cloudflare-flow.png)
 
 The user→edge hop is genuinely global: the SFU "runs on Cloudflare's global cloud network in hundreds of cities worldwide." So a user in Singapore hits a nearby Cloudflare edge regardless of where your bot lives. The latency-sensitive question is the **adapter → bot** leg — if your only bot is in Virginia and your user is in Sydney, that trans-Pacific hop is added on *top* of the LLM round-trip.
 
@@ -198,7 +176,7 @@ That last line is the crux for self-hosting: you don't escape bandwidth cost, yo
 |---|---|---|
 | **Cloudflare Realtime** | **$0.05/GB** | 1 TB/month (shared SFU+TURN); ingress free |
 | **AWS** (EC2/S3 → internet) | **$0.09/GB** (first 10 TB) | 100 GB/month, aggregated across services/regions |
-| **GCP** (Premium internet egress) | **~$0.12/GiB** typical first tier (down to \~$0.085 at volume) | Varies by service/region |
+| **GCP** (Premium internet egress) | **\~$0.12/GiB** typical first tier (down to \~$0.085 at volume) | Varies by service/region |
 | **DigitalOcean** | **$0.01/GiB** over allowance | Pooled across Droplets; inbound free |
 | **Hetzner** | **low / often included** | Varies by product/region; e.g. some 10 Gbit servers include 20 TB/mo, then \~€1/TB |
 | **OVHcloud** | **often generous/included in EU/NA** *(unverified — recheck)* | Varies by region; some APAC regions metered |
@@ -215,29 +193,29 @@ None of the three architectures "includes" the speech-to-speech model. In this p
 
 The only asymmetry: LiveKit Cloud *optionally* lets you route inference through **LiveKit Inference** (its own managed billing, drawing down those monthly credits). That's a convenience with no Cloudflare equivalent — but it's opt-in, and it applies to STT/LLM/TTS provider models rather than the BYOK realtime plugins. Under BYOK, the model bill is identical everywhere.
 
-**What does that model bill look like?** OpenAI currently publishes **$32 / 1M audio input tokens** and **$64 / 1M audio output tokens** for its Realtime models. Azure OpenAI offers `gpt-realtime` (and variants like `gpt-realtime-mini`), but **Azure sets its own pricing that can differ by deployment and region** — so use the Azure pricing calculator for a real Azure deployment rather than assuming the OpenAI list price. Using the OpenAI figures as a proxy and a \~600 audio-tokens-per-minute rule of thumb (an estimate), a 1:1 conversation lands roughly **$0.03–$0.06 per minute of active audio** (~$0.02/min in, ~$0.04/min out), before text tokens and function-calling overhead; a mini tier runs about a third of that. Note this dwarfs the *transport* cost in every option — for speech-to-speech, the model, not the SFU, dominates the bill.
+**What does that model bill look like?** OpenAI currently publishes **$32 / 1M audio input tokens** and **$64 / 1M audio output tokens** for its Realtime models. Azure OpenAI offers `gpt-realtime` (and variants like `gpt-realtime-mini`), but **Azure sets its own pricing that can differ by deployment and region** — so use the Azure pricing calculator for a real Azure deployment rather than assuming the OpenAI list price. Using the OpenAI figures as a proxy and a \~600 audio-tokens-per-minute rule of thumb (an estimate), a 1:1 conversation lands roughly **$0.03–$0.06 per minute of active audio** (\~$0.02/min in, \~$0.04/min out), before text tokens and function-calling overhead; a mini tier runs about a third of that. Note this dwarfs the *transport* cost in every option — for speech-to-speech, the model, not the SFU, dominates the bill.
 
 ### A worked example
 
-The bandwidth here isn't "Opus-ish" — and that matters. The browser↔SFU WebRTC legs are Opus (compressed, ~40 kbps), but **the WebSocket adapter leg is uncompressed 48 kHz stereo 16-bit PCM.** That's:
+The bandwidth here isn't "Opus-ish" — and that matters. The browser↔SFU WebRTC legs are Opus (compressed, \~40 kbps), but **the WebSocket adapter leg is uncompressed 48 kHz stereo 16-bit PCM.** That's:
 
 > 48,000 samples/s × 2 channels × 2 bytes = **192 KB/s ≈ 691 MB/hour, per direction**, before protobuf/WebSocket overhead.
 
 So you have to count each leg by its actual format and by billing direction (remember: traffic *into* Cloudflare is free; only Cloudflare→out is billed):
 
-| Leg | Format | Direction | Billed? | ~Bandwidth/hr |
+| Leg | Format | Direction | Billed? | \~Bandwidth/hr |
 |---|---|---|---|---|
 | Browser mic → SFU | Opus | ingress | free | — |
-| SFU → bot `/ingest` (user audio) | **PCM** | egress | **yes** | ~0.69 GB |
+| SFU → bot `/ingest` (user audio) | **PCM** | egress | **yes** | \~0.69 GB |
 | Bot `/stream` → SFU (bot audio) | **PCM** | ingress | free | — |
-| SFU → browser (bot audio playback) | Opus | egress | **yes** | ~0.02 GB |
+| SFU → browser (bot audio playback) | Opus | egress | **yes** | \~0.02 GB |
 
-So billed Cloudflare egress for one continuous call is **~0.7 GB/hour** — dominated by the single PCM leg the SFU sends to the bot. (The bot's own PCM back to Cloudflare is the heavy stream, ~0.69 GB/hr, but it's *ingress* and therefore free — a genuine quirk in this architecture's favor.) I'll use **~0.7 GB/hour billed egress** below; benchmark your own, since overhead and talk ratios vary.
+So billed Cloudflare egress for one continuous call is **\~0.7 GB/hour** — dominated by the single PCM leg the SFU sends to the bot. (The bot's own PCM back to Cloudflare is the heavy stream, \~0.69 GB/hr, but it's *ingress* and therefore free — a genuine quirk in this architecture's favor.) I'll use **\~0.7 GB/hour billed egress** below; benchmark your own, since overhead and talk ratios vary.
 
-Comparing **transport/platform fees only** — the Azure realtime cost (~$2–4/hour) is identical across all three and excluded:
+Comparing **transport/platform fees only** — the Azure realtime cost (\~$2–4/hour) is identical across all three and excluded:
 
-- **Cloudflare + Pipecat:** \~0.7 GB egress × $0.05 = **~$0.035/hour**, and only after you exhaust the free tier.
-- **LiveKit Cloud (Scale):** LiveKit's browser legs are Opus, so its billed downstream data transfer is far smaller than the PCM figure above — call it \~0.02 GB × $0.10 ≈ $0.002. But it *adds* the meters Cloudflare lacks: agent session minutes (60 × $0.01 = $0.60) *plus* participant minutes (\~$0.024). Call it **~$0.63/hour** in platform fees before any managed inference — over an order of magnitude more per call, driven almost entirely by time-connected meters, not bandwidth.
+- **Cloudflare + Pipecat:** \~0.7 GB egress × $0.05 = **\~$0.035/hour**, and only after you exhaust the free tier.
+- **LiveKit Cloud (Scale):** LiveKit's browser legs are Opus, so its billed downstream data transfer is far smaller than the PCM figure above — call it \~0.02 GB × $0.10 ≈ $0.002. But it *adds* the meters Cloudflare lacks: agent session minutes (60 × $0.01 = $0.60) *plus* participant minutes (\~$0.024). Call it **\~$0.63/hour** in platform fees before any managed inference — over an order of magnitude more per call, driven almost entirely by time-connected meters, not bandwidth.
 - **Self-hosted LiveKit:** no per-minute meters — just egress + amortized server cost. Its media is Opus, so egress is small (\~0.02 GB/hr); on AWS that's a fraction of a cent plus instance/Redis amortization, and on cheap-egress infra it approaches **just the amortized compute** — potentially the cheapest at high utilization, if you keep the servers busy.
 
 The gap between Cloudflare and LiveKit Cloud comes from LiveKit charging for *time connected* (agent + participant minutes), which Cloudflare doesn't. Self-hosting removes those meters but reintroduces server cost and ops. Note the irony: LiveKit's *bandwidth* is actually cheaper (Opus vs. this project's PCM adapter leg), but its per-minute meters dominate the total. For high-concurrency, long-session workloads, avoiding time-connected meters is the bigger win; for low-volume or bursty workloads, LiveKit Cloud's free tier and zero assembly cost win. Either way, once you add the \~$2–4/hour Azure realtime bill, the transport delta shrinks in *relative* terms — though at scale it's still real money.
@@ -268,7 +246,7 @@ So you *can* build a hybrid: self-hosted LiveKit SFU + a cheaper standalone rela
 - **coturn** (BSD-licensed, free software) on a cheap-egress host — cheapest raw relay bandwidth (DigitalOcean $0.01/GB, Hetzner lower), but you operate another server.
 - **Cloudflare standalone TURN** at $0.05/GB — managed, but subject to those per-allocation caps.
 
-**But watch the relay fraction:** whether optimizing TURN matters depends heavily on how much of your traffic is relayed. In consumer WebRTC (~20% relayed), TURN carries a small slice while the SFU forwards *all* media — so the SFU egress dominates and a cheaper TURN is a rounding error. But in an **enterprise scenario at 50–70% relay — or a forced-relay 100% architecture — TURN is no longer marginal.** At 100%, every byte goes through the relay, so the TURN egress rate matters as much as the SFU's. The higher your relay fraction, the more a cheaper (or free-when-bundled) TURN moves the total — which, for an SAP-style enterprise customer base, is likely the common case, not the exception.
+**But watch the relay fraction:** whether optimizing TURN matters depends heavily on how much of your traffic is relayed. In consumer WebRTC (\~20% relayed), TURN carries a small slice while the SFU forwards *all* media — so the SFU egress dominates and a cheaper TURN is a rounding error. But in an **enterprise scenario at 50–70% relay — or a forced-relay 100% architecture — TURN is no longer marginal.** At 100%, every byte goes through the relay, so the TURN egress rate matters as much as the SFU's. The higher your relay fraction, the more a cheaper (or free-when-bundled) TURN moves the total — which, for an SAP-style enterprise customer base, is likely the common case, not the exception.
 
 So: **cheaper secondary TURN, or Cloudflare's bundled bill?** The honest answer depends on where the SFU lives:
 
@@ -298,9 +276,9 @@ In short: the cheaper the SFU bandwidth and the **higher your relay fraction**, 
 
 ## Conclusion
 
-The Cloudflare + Pipecat path is more work — I hit four silent-failure bugs before hearing the bot — but the payoff is a bandwidth-only bill at **$0.05/GB egress with free ingress**, no per-minute metering, TURN free when bundled with the SFU, and full control over the pipeline. The trade is maturity and DIY: the WebSocket adapter is beta, and you build the transport, signaling, and geo-routing yourself. LiveKit Cloud is a GA, managed offering with cross-platform SDKs; if you self-host LiveKit you strip out the per-minute meters, but the cost advantage depends on running on cheap-egress infrastructure and operating the SFU (plus Redis/TURN for a distributed deployment) yourself.
+The Cloudflare + Pipecat path is more work — getting audio flowing end-to-end took real debugging — but the payoff is a bandwidth-only bill at **$0.05/GB egress with free ingress**, no per-minute metering, TURN free when bundled with the SFU, and full control over the pipeline. The trade is maturity and DIY: the WebSocket adapter is beta, and you build the transport, signaling, and geo-routing yourself. LiveKit Cloud is a GA, managed offering with cross-platform SDKs; if you self-host LiveKit you strip out the per-minute meters, but the cost advantage depends on running on cheap-egress infrastructure and operating the SFU (plus Redis/TURN for a distributed deployment) yourself.
 
-The takeaway on TURN: model it as a range, not a folklore constant. For consumer WebRTC (~20% relayed), TURN is a rounding error and the SFU's egress rate decides the bill. But for an enterprise base — where 50–100% forced relay is realistic — TURN becomes a first-order cost, and Cloudflare's free-when-bundled TURN turns from a footnote into a genuine advantage.
+The takeaway on TURN: model it as a range, not a folklore constant. For consumer WebRTC (\~20% relayed), TURN is a rounding error and the SFU's egress rate decides the bill. But for an enterprise base — where 50–100% forced relay is realistic — TURN becomes a first-order cost, and Cloudflare's free-when-bundled TURN turns from a footnote into a genuine advantage.
 
 And the biggest number of all is the one none of these platforms charge: the realtime model. At \~$2–4/hour for Azure/OpenAI GPT Realtime, the LLM dwarfs every transport option — so pick the transport that fits your operational appetite and volume, and don't over-index on cents-per-GB when dollars-per-hour are going to the model regardless. As a rough guide: LiveKit Cloud's free tier is the fastest start for a prototype or low-volume product; at thousands of concurrent, long-running sessions, avoiding time-connected meters (Cloudflare's $0.05/GB, or self-hosting on budget infra) is where the platform savings show up. The glue, as it turns out, is only a few hundred lines.
 
