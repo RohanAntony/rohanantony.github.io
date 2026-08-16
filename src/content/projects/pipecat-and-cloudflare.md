@@ -31,20 +31,7 @@ Read on for the full architecture, what I learned building it, and the detailed 
 
 A browser talks to a speech-to-speech bot (Azure OpenAI GPT Realtime) in real time. The twist is the transport: instead of a voice-AI platform SDK, the media rides Cloudflare's SFU, and Cloudflare bridges it to my Python bot over a plain WebSocket carrying PCM.
 
-```mermaid
-flowchart LR
-    Browser["Browser<br/>(client)"]
-    SFU["Cloudflare<br/>Realtime SFU"]
-    Bot["Bot server<br/>(Pipecat)"]
-    Proxy["Express signaling proxy<br/>(keeps CF_APP_SECRET private)"]
-    Azure["Azure GPT<br/>Realtime"]
-
-    Browser <-->|WebRTC| SFU
-    SFU <-->|WebSocket PCM| Bot
-    Browser -->|REST signaling| Proxy
-    Proxy -->|REST adapter mgmt| SFU
-    Bot <--> Azure
-```
+![Architecture diagram showing browser, Cloudflare Realtime SFU, bot server, Express signaling proxy, and Azure GPT Realtime connections](../../assets/pipecat-cloudflare-arch.png)
 
 Three moving parts:
 
@@ -135,13 +122,7 @@ Both platforms optimize for the same thing — get media onto a global backbone 
 
 This is where the WebSocket-adapter architecture gets interesting — and where the docs leave you on your own. The full media path is:
 
-```mermaid
-flowchart LR
-    User["user<br/>(WebRTC)"] --> Edge["nearest<br/>Cloudflare edge"]
-    Edge --> SFU["SFU"]
-    SFU --> Adapter["WebSocket<br/>adapter"]
-    Adapter --> Bot["bot"]
-```
+![Media flow diagram showing user connecting to nearest Cloudflare edge, through SFU, WebSocket adapter, to bot](../../assets/pipecat-cloudflare-flow.png)
 
 The user→edge hop is genuinely global: the SFU "runs on Cloudflare's global cloud network in hundreds of cities worldwide." So a user in Singapore hits a nearby Cloudflare edge regardless of where your bot lives. The latency-sensitive question is the **adapter → bot** leg — if your only bot is in Virginia and your user is in Sydney, that trans-Pacific hop is added on *top* of the LLM round-trip.
 
