@@ -69,19 +69,21 @@ For an internal pilot, shipping on the beta adapter is fine if you pin behavior 
 
 ## What production architecture I'd actually use
 
-Here's the reassuring part: **you don't have to leave Cloudflare to get to GA.** The beta is only the convenience bridge; the SFU underneath is GA. So the production plan — the thing to run until the WebSocket adapter reaches GA — is to have the bot **join the SFU as a real WebRTC peer** over the GA sessions/tracks API, exactly as a browser does. That means giving the bot a server-side WebRTC stack; **aiortc** is the pragmatic pick for a Python bot (it's what Pipecat's `SmallWebRTCTransport` already uses, it decodes Opus to PCM via PyAV, and it speaks the same non-trickle, one-shot SDP offer/answer that Cloudflare's HTTP tracks API expects).
+Here's the reassuring part: **you don't have to leave Cloudflare to get to GA.** The beta is only the convenience bridge; the SFU underneath is GA. Cloudflare's own [example architecture](https://developers.cloudflare.com/realtime/sfu/example-architecture) explicitly supports **headless clients** — bots that join the SFU as full WebRTC participants, publishing and subscribing to tracks exactly as a browser does. That's the production path.
 
-What that port looks like — and, crucially, what it *doesn't* touch:
+In practice this means giving the bot a server-side WebRTC stack. For this Python/Pipecat setup, **aiortc** is what I'd reach for — it's what Pipecat's `SmallWebRTCTransport` already uses, it handles Opus decoding via PyAV, and it speaks the same SDP offer/answer flow that Cloudflare's sessions/tracks API expects. But aiortc is my implementation choice here, not a Cloudflare requirement — any server-side WebRTC library that can do a standard SDP exchange would work.
 
-- **Unchanged:** the Pipecat pipeline, the input/output transport interface, and the existing signaling proxy — all of it carries over untouched, since the proxy routes are already the GA API.
-- **Input path:** aiortc receives the browser's audio track, decodes it from Opus to raw PCM, and hands it to the Pipecat pipeline. This replaces the protobuf parsing the WebSocket adapter currently handles.
-- **Output path:** the bot's generated audio is served back through an aiortc media track; aiortc handles encoding it to Opus before it reaches the browser. This replaces the manual PCM formatting the adapter currently does.
-- **Signaling:** aiortc completes ICE gathering before producing an SDP offer, so it's a straightforward POST to Cloudflare's tracks API — one exchange to push the bot's audio, one to pull the user's.
-- **Bonus:** audio stays Opus end-to-end, which eliminates the large uncompressed PCM leg the WebSocket adapter introduces — so the GA-safe path is also the cheaper-bandwidth path.
+What changes and what doesn't:
 
-The trade-offs to go in with: there's **no WHIP/WHEP** for the SFU and **no Cloudflare server SDK or Pipecat-native Cloudflare transport**, so this is genuine custom-transport work (though built entirely on GA surfaces); and aiortc, being pure Python, has a lower per-instance concurrency ceiling than a compiled stack — fine for prototype and early GA, worth benchmarking before you scale hard.
+- **Unchanged:** the Pipecat pipeline, the input/output transport interface, and the existing signaling proxy — all of it carries over untouched.
+- **Input path:** the bot receives the browser's audio track via WebRTC, decoded from Opus to PCM by aiortc. This replaces the protobuf parsing the WebSocket adapter currently handles.
+- **Output path:** the bot's generated audio goes back through a WebRTC media track; aiortc encodes it to Opus before it reaches the browser. This replaces the manual PCM formatting the adapter currently does.
+- **Signaling:** a standard SDP offer/answer exchange with Cloudflare's tracks API — one to push the bot's audio track, one to pull the user's.
+- **Bonus:** audio stays Opus end-to-end, eliminating the large uncompressed PCM leg the WebSocket adapter introduces — so this path is also considerably cheaper on bandwidth.
 
-So the honest verdict: **the adapter-based build in this post is an excellent prototype; the production path is the aiortc + GA-tracks-API approach above** — same Cloudflare, same cost story, just a WebRTC peer instead of a WebSocket bridge — and you'd switch back to the adapter once it's GA. If you'd rather not build a custom WebRTC transport at all, LiveKit's media transport is GA today. The rest of this post compares those options.
+The trade-offs: there's no Cloudflare server SDK or Pipecat-native Cloudflare transport, so this is custom-transport work; and aiortc, being pure Python, has a lower per-instance concurrency ceiling than a compiled stack — worth benchmarking before scaling hard.
+
+So the honest verdict: **the adapter-based build in this post is an excellent prototype; having the bot join as a headless WebRTC participant is the production path** — same Cloudflare SFU, same cost story, just a proper WebRTC peer instead of a WebSocket bridge. If you'd rather not build a custom WebRTC transport at all, LiveKit's media transport is available today. The rest of this post compares those options.
 
 ### The three options being compared
 
@@ -120,29 +122,13 @@ Both platforms optimize for the same thing — get media onto a global backbone 
 
 ### Running the bot on multiple continents
 
-This is where the WebSocket-adapter architecture gets interesting — and where the docs leave you on your own. The full media path is:
+The SFU side of the equation is already global — Cloudflare places users on their nearest edge automatically. The latency-sensitive question is the **bot** leg: if your only bot instance is in Virginia and your user is in Sydney, that trans-Pacific hop sits on top of the model round-trip regardless of how good the SFU is.
 
-![Media flow diagram showing user connecting to nearest Cloudflare edge, through SFU, WebSocket adapter, to bot](../../assets/pipecat-cloudflare-flow.png)
+The WebSocket adapter doesn't have documented geo-routing for the bot endpoint, so solving this with the adapter-based architecture requires external tooling you'd have to build and validate yourself.
 
-The user→edge hop is genuinely global: the SFU "runs on Cloudflare's global cloud network in hundreds of cities worldwide." So a user in Singapore hits a nearby Cloudflare edge regardless of where your bot lives. The latency-sensitive question is the **adapter → bot** leg — if your only bot is in Virginia and your user is in Sydney, that trans-Pacific hop is added on *top* of the LLM round-trip.
+The cleaner solution is the production path described earlier: **have the bot join the SFU as a WebRTC peer via aiortc**. With that approach, the bot connects to Cloudflare's GA sessions/tracks API just like a browser does — which means you can deploy bot instances in multiple regions (US, EU, APAC) and route each user to their nearest bot through standard means (a geo-aware load balancer, GeoDNS, or Cloudflare itself). The SFU handles the user's edge hop; your routing layer handles the bot placement. No undocumented behavior to work around.
 
-The obvious fix is to run bots on several continents (US, EU, APAC) and have Cloudflare connect to the nearest one. Here's the catch, and it's an important one:
-
-- **Cloudflare's docs do not specify where the adapter's outbound WebSocket connection originates.** There's no documented "connect from the nearest colo" guarantee, no anycast statement for the adapter (anycast nearest-location routing is documented only for [TURN](https://developers.cloudflare.com/realtime/turn/), not the SFU or the adapter), and no built-in geo-routing for the `endpoint` field. The adapter takes exactly **one** `wss://` URL.
-- So to route to the nearest bot, **you have to do it yourself**: point the adapter at a single hostname that resolves to the nearest bot via your own GeoDNS, anycast, or a geo-aware load balancer.
-- **But** — since the origin of Cloudflare's outbound connection is undocumented, my *inference* is that GeoDNS on your hostname would resolve based on wherever *Cloudflare's adapter connection* originates, **not** necessarily near the end user. That's a hypothesis about undocumented infrastructure, not a documented behavior — so you must **measure it empirically** (inspect the source IP/region your bot sees, or compare RTT from bots in different regions) before relying on it.
-
-The practical upshot: multi-continent bot placement is achievable, but it's a DIY exercise with an unverified routing assumption baked in. LiveKit Cloud's distributed mesh, by contrast, handles nearest-instance placement as a first-class feature — one fewer thing to build and validate. Self-hosted LiveKit sits in between: the software supports multi-region, but you operate the topology, so you're doing DIY geo-placement much like the Cloudflare approach — just for the SFU instead of the bot.
-
-**Does multi-continent placement cost extra on Cloudflare? No.** Egress is a flat **$0.05/GB globally** — there is no documented cross-region or inter-continental surcharge (unlike AWS, which charges more for some regions and for inter-region transfer). Connecting to a bot in Frankfurt vs. one in Virginia is billed identically. And remember bot → Cloudflare is ingress (free), so a chattier bot region doesn't change the bill.
-
-### "Can I just spin up one Cloudflare SFU + TURN per region and match users myself?"
-
-You don't need to — a Cloudflare Realtime `appId` is a **global resource, not a regional deployment.** The SFU already "runs on Cloudflare's global cloud network in hundreds of cities worldwide," and TURN is anycast-routed to "the Cloudflare location closest to [the client]." One app already puts every user on their nearest edge, so per-region apps add no latency benefit — they'd just re-implement routing Cloudflare does for free.
-
-(This is the opposite of self-hosting, where a LiveKit node or coturn box *is* physically in one region, so per-region deployment genuinely matters.)
-
-Your known user/bot locations are still useful — but for the one hop Cloudflare *doesn't* place for you: the **bot**. Route each adapter's `endpoint` to the bot nearest the user. Multiple Cloudflare apps have a legitimate use for **billing/isolation**, not latency.
+**Does multi-continent placement cost extra on Cloudflare? No.** Egress is a flat **$0.05/GB globally** with no inter-regional surcharge. Bot → Cloudflare is ingress and free, so running bots in multiple regions doesn't change the bandwidth bill.
 
 ## Cloudflare vs LiveKit: cost
 
@@ -201,11 +187,14 @@ A **chained STT → LLM → TTS** pipeline can be meaningfully cheaper. The LLM 
 
 ### A worked example
 
-The bandwidth here isn't "Opus-ish" — and that matters. The browser↔SFU WebRTC legs are Opus (compressed, \~40 kbps), but **the WebSocket adapter leg is uncompressed 48 kHz stereo 16-bit PCM.** That's:
+The bot architecture you choose affects bandwidth significantly. The WebSocket adapter carries **uncompressed 48 kHz stereo 16-bit PCM** — a fixed, heavy format. A bot joining as a WebRTC peer keeps audio as **Opus** end-to-end, the same compressed format the browser uses (Opus bitrate is variable and encoder-dependent; 40 kbps is used here as an illustrative assumption — your actual rate will vary).
 
-> 48,000 samples/s × 2 channels × 2 bytes = **192 KB/s ≈ 691 MB/hour, per direction**, before protobuf/WebSocket overhead.
+> PCM: 48,000 samples/s × 2 channels × 2 bytes = **192 KB/s ≈ 691 MB/hour, per direction**
+> Opus: assume \~40 kbps → **\~18 MB/hour** *(illustrative; actual bitrate varies)*
 
-So you have to count each leg by its actual format and by billing direction (remember: traffic *into* Cloudflare is free; only Cloudflare→out is billed):
+Breaking down each leg by format and billing direction (traffic *into* Cloudflare is free; only Cloudflare→out is billed):
+
+**Bot via WebSocket adapter (PCM):**
 
 | Leg | Format | Direction | Billed? | \~Bandwidth/hr |
 |---|---|---|---|---|
@@ -214,7 +203,20 @@ So you have to count each leg by its actual format and by billing direction (rem
 | Bot `/stream` → SFU (bot audio) | **PCM** | ingress | free | — |
 | SFU → browser (bot audio playback) | Opus | egress | **yes** | \~0.02 GB |
 
-So billed Cloudflare egress for one continuous call is **\~0.7 GB/hour** — dominated by the single PCM leg the SFU sends to the bot. (The bot's own PCM back to Cloudflare is the heavy stream, \~0.69 GB/hr, but it's *ingress* and therefore free — a genuine quirk in this architecture's favor.) I'll use **\~0.7 GB/hour billed egress** below; benchmark your own, since overhead and talk ratios vary.
+**Billed egress: \~0.71 GB/hour** — dominated by the PCM leg to the bot.
+
+**Bot via WebRTC peer (Opus end-to-end, illustrative):**
+
+| Leg | Format | Direction | Billed? | \~Bandwidth/hr |
+|---|---|---|---|---|
+| Browser mic → SFU | Opus | ingress | free | — |
+| SFU → bot (user audio) | **Opus** | egress | **yes** | \~0.02 GB |
+| Bot → SFU (bot audio) | **Opus** | ingress | free | — |
+| SFU → browser (bot audio playback) | Opus | egress | **yes** | \~0.02 GB |
+
+**Billed egress: \~0.04 GB/hour** — roughly 18× less than the WebSocket adapter path, assuming the 40 kbps Opus estimate.
+
+A WebRTC-peer bot architecture — which is the production path I'd consider once the WebSocket adapter reaches GA or as an alternative today — would bring the bandwidth bill down considerably. I'll use the WebSocket adapter figure (\~0.71 GB/hr) for the comparisons below since that's what this demo runs.
 
 Comparing **transport/platform fees only** — the model pipeline cost is identical across all three and excluded:
 
@@ -242,7 +244,7 @@ For an enterprise audience (think locked-down corporate networks, strict egress 
 
 It matters here because **TURN is decoupleable from the SFU on both sides:**
 
-- **LiveKit's embedded TURN is optional.** Self-hosting LiveKit gives you a built-in TURN/STUN server "for free" (no software fee), but clients use ICE, so you can point them at *any* external TURN service instead.
+- **LiveKit's embedded TURN adds to your server egress bill.** Self-hosting LiveKit includes a built-in TURN/STUN server at no software cost, but it runs on the same machine as the SFU — so relayed traffic exits through your cloud provider's egress meter. On AWS at $0.09/GB or GCP at ~$0.12/GiB, that relay traffic is billed at hyperscaler rates. Because clients use ICE, you can point them at any external TURN service instead — swapping in coturn on cheaper infra or Cloudflare's standalone TURN can meaningfully reduce the relay portion of your bill, especially at higher relay fractions.
 - **Cloudflare TURN is a standalone product.** Used *together with* Cloudflare's Realtime SFU, TURN is **free** (traffic between Cloudflare TURN and SFU isn't double-charged). Used standalone — e.g. as the relay for someone else's SFU — it's **$0.05/GB outbound**, sharing the same 1,000 GB free tier, and it has per-allocation throttles (>50–100 Mbps, >5–10 kpps).
 
 So you *can* build a hybrid: self-hosted LiveKit SFU + a cheaper standalone relay. Options for the relay:
