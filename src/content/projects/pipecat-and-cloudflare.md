@@ -73,11 +73,11 @@ Here's the reassuring part: **you don't have to leave Cloudflare to get to GA.**
 
 What that port looks like — and, crucially, what it *doesn't* touch:
 
-- **Unchanged:** the Pipecat pipeline (`transport.input() → llm → transport.output()`), the `BaseInputTransport`/`BaseOutputTransport` surface (`push_audio_frame` / `write_audio_frame`), and the existing signaling proxy (its `/sessions`, `/tracks`, `/renegotiate` routes are already the GA API).
-- **Input path:** `@pc.on("track")` → `await track.recv()` yields an `av.AudioFrame` (Opus decoded to 48 kHz stereo s16) → `av.AudioResampler(format="s16", layout="mono", rate=24000)` → `push_audio_frame`. This replaces the protobuf parse + manual decimation.
-- **Output path:** a `MediaStreamTrack` subclass whose `recv()` serves PCM (fed by `write_audio_frame` via a queue), paced to \~20 ms; aiortc auto-encodes to Opus. This replaces the manual PCM upmix + protobuf framing.
-- **Signaling:** aiortc's `setLocalDescription()` blocks until ICE gathering completes, so `pc.localDescription.sdp` is a complete offer — POST it to `/tracks/new`, apply the returned answer. One offer/answer to push the bot's track, one to pull the user's.
-- **Bonus:** audio stays **Opus end-to-end**, dropping the \~691 MB/hr uncompressed PCM leg the adapter introduces (see the cost section) — so the GA-safe path is *also* the cheaper-bandwidth path.
+- **Unchanged:** the Pipecat pipeline, the input/output transport interface, and the existing signaling proxy — all of it carries over untouched, since the proxy routes are already the GA API.
+- **Input path:** aiortc receives the browser's audio track, decodes it from Opus to raw PCM, and hands it to the Pipecat pipeline. This replaces the protobuf parsing the WebSocket adapter currently handles.
+- **Output path:** the bot's generated audio is served back through an aiortc media track; aiortc handles encoding it to Opus before it reaches the browser. This replaces the manual PCM formatting the adapter currently does.
+- **Signaling:** aiortc completes ICE gathering before producing an SDP offer, so it's a straightforward POST to Cloudflare's tracks API — one exchange to push the bot's audio, one to pull the user's.
+- **Bonus:** audio stays Opus end-to-end, which eliminates the large uncompressed PCM leg the WebSocket adapter introduces — so the GA-safe path is also the cheaper-bandwidth path.
 
 The trade-offs to go in with: there's **no WHIP/WHEP** for the SFU and **no Cloudflare server SDK or Pipecat-native Cloudflare transport**, so this is genuine custom-transport work (though built entirely on GA surfaces); and aiortc, being pure Python, has a lower per-instance concurrency ceiling than a compiled stack — fine for prototype and early GA, worth benchmarking before you scale hard.
 
