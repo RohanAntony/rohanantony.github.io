@@ -262,29 +262,29 @@ In short: the cheaper the SFU bandwidth and the **higher your relay fraction**, 
 
 ## My recommendation by workload
 
-**Reach for LiveKit Cloud (managed) if:**
-- You want to ship fast and not build transport/signaling/turn-detection yourself.
-- You value a GA, managed offering with cross-platform SDKs and managed agent deployments.
-- Your volume is modest, or the per-call convenience is worth the premium.
+**Reach for Cloudflare SFU + Pipecat if:**
+- Cost at scale matters and you want no per-minute meters — just $0.05/GB egress with free ingress.
+- You want SFU + free-bundled TURN from one vendor and no servers to operate.
+- You want to own the media path, pick your own models, and avoid framework lock-in.
+- You want the flexibility to run a chained STT → LLM → TTS pipeline, including open-source models at zero API cost.
+- You're comfortable with a beta WebSocket adapter for prototyping, or willing to wire up a WebRTC-peer bot for production.
 
 **Reach for self-hosted LiveKit if:**
 - You'll run it on cheap-egress infra and have the ops capacity for the SFU (plus Redis/TURN/LB for a distributed deployment).
-- You want LiveKit's Agents framework and SDK ergonomics without the per-minute meters.
+- You want LiveKit's Agents framework ergonomics without the per-minute meters.
 - Your bandwidth volume is high enough that self-hosted egress beats managed per-minute billing.
 
-**Reach for Cloudflare SFU + Pipecat if:**
-- Cost at scale matters and you want *nobody's* per-minute meter — just $0.05/GB egress with free ingress.
-- You want SFU + free-bundled TURN from one vendor and no servers to operate.
-- You want to own the media path and pick your own LLM/framework with no lock-in.
-- You're comfortable with beta APIs and writing a bit of glue (this post is your map) — or building the aiortc WebRTC-peer transport for a GA-safe path.
+**Reach for LiveKit Cloud (managed) if:**
+- You want zero infrastructure to operate and a fully managed service.
+- Your volume is modest, or the operational simplicity is worth the per-minute premium.
 
 ## Conclusion
 
-The Cloudflare + Pipecat path does require assembling the pieces yourself — but the whole demo came together in under 24 hours — and the payoff is a bandwidth-only bill at **$0.05/GB egress with free ingress**, no per-minute metering, TURN free when bundled with the SFU, and full control over the pipeline. The trade is maturity and DIY: the WebSocket adapter is beta, and you build the transport, signaling, and geo-routing yourself. LiveKit Cloud is a GA, managed offering with cross-platform SDKs; if you self-host LiveKit you strip out the per-minute meters, but the cost advantage depends on running on cheap-egress infrastructure and operating the SFU (plus Redis/TURN for a distributed deployment) yourself.
+The Cloudflare + Pipecat path gives you a bandwidth-only bill at **$0.05/GB egress with free ingress**, no per-minute metering, TURN free when bundled with the SFU, and full control over the pipeline — including the freedom to choose your model architecture, run open-source models, and avoid any framework lock-in. The whole demo came together in under 24 hours. The WebSocket adapter is beta, so for production the natural next step is having the bot join as a headless WebRTC participant — same SFU, same cost story, fully on GA surfaces.
 
 The takeaway on TURN: model it as a range, not a folklore constant. For consumer WebRTC (\~20% relayed), TURN is a rounding error and the SFU's egress rate decides the bill. But for an enterprise base — where 50–100% forced relay is realistic — TURN becomes a first-order cost, and Cloudflare's free-when-bundled TURN turns from a footnote into a genuine advantage.
 
-And the biggest number of all is the one none of these platforms charge: the model layer. Whether you use a single realtime model or a chained STT → LLM → TTS pipeline makes a real difference here — chaining lets you use text-token LLM pricing and purpose-built STT/TTS services, which can be considerably cheaper than audio-token realtime models. The tradeoff is latency per hop. Either way, the model choice dominates the transport cost across all three SFU options — so pick the transport that fits your operational appetite and volume, and don't over-index on cents-per-GB. As a rough guide: LiveKit Cloud's free tier is the fastest start for a prototype or low-volume product; at scale, avoiding time-connected meters (Cloudflare's $0.05/GB, or self-hosting on budget infra) is where the platform savings show up. The glue, as it turns out, is only a few hundred lines.
+The transport and model choices compound. A chained STT → LLM → TTS pipeline with open-source or cheaper models can significantly reduce the model bill compared to a bundled realtime model — and pairing that with Cloudflare's bandwidth-only pricing removes per-minute meters from the equation entirely. At scale, both levers matter: the platform you choose determines whether you're paying for time connected or bytes transferred, and the model architecture determines what those bytes are doing. The glue, as it turns out, is only a few hundred lines.
 
 ## What's next: a fully open-source chained pipeline
 
