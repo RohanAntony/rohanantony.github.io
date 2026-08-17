@@ -35,20 +35,20 @@ A browser talks to a speech-to-speech bot (Azure OpenAI GPT Realtime) in real ti
 
 Three moving parts:
 
-- **Browser client** — captures the mic, does WebRTC signaling with the SFU, plays back the bot's track.
-- **Signaling proxy** — a thin Express server so the Cloudflare app secret never touches the browser.
-- **Bot server** — a Pipecat pipeline (`transport.input() → Azure Realtime LLM → transport.output()`) fronted by a custom Cloudflare WebSocket adapter transport.
+- **Browser client** — captures the mic, connects to the SFU over WebRTC, and plays back the bot's audio track.
+- **Signaling proxy** — a thin server that keeps the Cloudflare app secret off the browser and handles session setup.
+- **Bot server** — a Pipecat pipeline connecting the transport layer to the Azure Realtime model, fronted by a custom Cloudflare WebSocket adapter transport.
 
 The interesting bit is Cloudflare's [WebSocket media transport adapter](https://developers.cloudflare.com/realtime/sfu/media-transport-adapters/websocket-adapter/) (currently in beta), which lets any WebSocket endpoint act as a media source or sink for the SFU. Two unidirectional adapters wire up the bot:
 
-- **Egress (`location: "remote"`)** — the SFU pulls the browser's mic track and streams it to the bot's `/ingest` WebSocket. Frames arrive as a protobuf `Packet` with `sequenceNumber`, `timestamp`, and `payload`.
-- **Ingest (`location: "local"`, `mode: "buffer"`)** — the bot pushes generated audio to `/stream`; the SFU creates a *new* WebRTC track that the browser pulls and plays. In buffer mode, only the `payload` field is used.
+- **SFU → bot** — the SFU pulls the browser's mic track and streams it to the bot as raw audio frames over a WebSocket.
+- **Bot → SFU** — the bot pushes its generated audio back over a second WebSocket; the SFU turns that into a new WebRTC track that the browser plays.
 
-The wire format is fixed: **48 kHz, stereo, interleaved, 16-bit signed little-endian PCM**, max 32 KB per message. Azure Realtime, meanwhile, speaks **24 kHz mono**. So the transport does the sample-rate and channel bridging in both directions.
+The wire format between the SFU and the bot is uncompressed PCM — fixed at 48 kHz stereo — while the model speaks a different rate and channel count, so the transport bridges the two formats in both directions.
 
 ## What I learned building it
 
-The full demo — browser client, signaling proxy, and Pipecat bot — came together in under 24 hours. Pipecat's transport-agnostic design meant the pipeline itself (`transport.input() → Azure Realtime LLM → transport.output()`) was the easy part; the interesting work was in the glue between the pieces. A few things worth knowing going in:
+The full demo — browser client, signaling proxy, and Pipecat bot — came together in under 24 hours. Pipecat's transport-agnostic design meant the pipeline itself was the easy part; the interesting work was in the glue between the pieces. A few things worth knowing going in:
 
 **Know your wire formats upfront.** The WebSocket adapter speaks 48 kHz stereo PCM; Azure Realtime speaks 24 kHz mono. Neither side is wrong — they just speak different dialects. Mapping those out before writing any code makes the conversion logic obvious rather than emergent.
 
@@ -98,7 +98,7 @@ They trade off along the same axis — **managed convenience vs. raw control vs.
 | Dimension | **Cloudflare SFU + Pipecat** | **LiveKit Cloud** | **Self-hosted LiveKit** |
 |---|---|---|---|
 | Media transport | Cloudflare Realtime SFU (WebRTC), bot bridged via WebSocket PCM | LiveKit SFU (WebRTC), managed distributed mesh | LiveKit SFU (WebRTC), your servers |
-| Agent framework | Pipecat (transport-agnostic) | LiveKit Agents (Python/Node) | LiveKit Agents (Python/Node) |
+| Agent framework | Pipecat (transport-agnostic; comparable pipeline primitives to LiveKit Agents — STT, LLM, TTS, turn detection, interruptions — with more explicit configuration) | LiveKit Agents (Python/Node; turn detection, interruptions, reconnection, and provider plugins built-in; managed deployments) | LiveKit Agents (Python/Node; same built-in capabilities, self-operated) |
 | LLM integration | You wire it (Azure Realtime here) | Plugins (BYOK) + optional managed Inference | Plugins (BYOK) |
 | Who runs the infra | You run the bot; Cloudflare runs the SFU | LiveKit runs everything | You run SFU (+ Redis/TURN/LB for distributed) + bot |
 | Signaling | You build the proxy | Handled by LiveKit SDKs | Handled by LiveKit SDKs |
@@ -106,7 +106,7 @@ They trade off along the same axis — **managed convenience vs. raw control vs.
 | Ops burden | Low–medium (one bot + proxy) | None | Medium–high (SFU; + Redis/TURN/LB & scaling for distributed) |
 | Maturity | WebSocket adapter is **beta** | GA (managed) | GA software, self-operated |
 
-All three are SFUs forwarding packets rather than mixing them. The real difference is *how much you assemble and operate yourself*. With LiveKit Cloud, `AgentSession(llm=openai.realtime.RealtimeModel())` and the SDK handle signaling, turn detection, interruptions, reconnection, and global placement. Self-hosted LiveKit gives you that same SDK ergonomics but hands you the servers to run. With the Cloudflare approach, I wrote the transport, the framing, the resampling, and the signaling proxy — the whole thing fit in under 24 hours and gave me full visibility into where every millisecond and every byte goes.
+All three are SFUs forwarding packets rather than mixing them. The real difference is *how much you assemble and operate yourself*. With LiveKit Cloud, the Agents SDK handles signaling, turn detection, interruptions, reconnection, and global placement in a batteries-included package. Pipecat covers the same agent-layer capabilities — STT, LLM, TTS, turn detection, interruptions — but is transport-agnostic, meaning it works across platforms including Cloudflare, Daily, and LiveKit itself. The trade is more explicit configuration in exchange for full control and no per-minute meters. Self-hosted LiveKit gives you LiveKit's SDK ergonomics but hands you the servers to run.
 
 ## Cloudflare vs LiveKit: latency
 
@@ -117,8 +117,6 @@ Both platforms optimize for the same thing — get media onto a global backbone 
 **LiveKit Cloud** is a [distributed mesh of SFUs](https://livekit.com/blog/scaling-webrtc-with-distributed-mesh); participants connect to their nearest instance and sessions can span data centers. Its pricing page advertises delivering **"voice and video worldwide in under 250ms."** Treat that as a marketing transport figure, not a measured end-to-end voice round-trip — and note LiveKit's separately published latency benchmarks are *LLM inference* numbers (e.g., \~192 ms time-to-first-token for their hosted Gemma 4), which are a different measurement again. Don't conflate transport latency, inference latency, and end-to-end voice latency.
 
 **Self-hosted LiveKit** gets you the same SFU software but *not* the managed mesh's global footprint for free — that geographic distribution is something LiveKit Cloud operates for you. Self-hosted, your latency is only as good as your own deployment: a single-region SFU means users on other continents pay the cross-ocean hop, and multi-region placement (with LiveKit's region-aware node selector) is on you to stand up and run. So self-hosting can match LiveKit Cloud's latency *if* you replicate its multi-region topology — which is real operational work.
-
-**The honest take:** for the *transport hop*, all three are edge-optimized WebRTC SFUs and will feel similar *when deployed close to the user*. In this project, the dominant latency source isn't the SFU at all — it's the extra hop the WebSocket adapter introduces (SFU ↔ bot) plus the Azure Realtime model's own response time. Using LiveKit Agents instead removes that separate Cloudflare-SFU-to-bot WebSocket hop and integrates the media orchestration directly (though the frontend is still WebRTC and the Realtime API is still a separate WebSocket to Azure/OpenAI — it's not literally one media system). If sub-250 ms transport latency matters and you don't want to build and benchmark the routing yourself, LiveKit Cloud's managed mesh does that placement for you. If your bottleneck is the LLM (it usually is for speech-to-speech), the transport choice barely moves the needle.
 
 ### Running the bot on multiple continents
 
@@ -290,7 +288,7 @@ And the biggest number of all is the one none of these platforms charge: the mod
 
 ## What's next: a fully open-source chained pipeline
 
-In the next post I'll put the chained architecture into practice using entirely open-source models: **Whisper** for STT, **Gemma 4 4B** as the LLM, and **Kokoro** for TTS — all running locally, all wired together with Pipecat on the same Cloudflare SFU transport built here. The goal is to see how far you can get on a zero-API-cost model stack, and what the latency and quality tradeoffs look like compared to a managed realtime model. Stay tuned.
+In the next post I'll put the chained architecture into practice using entirely open-source models: **Whisper** for STT, **Gemma 4 4B** as the LLM, and **Kokoro** for TTS — all running locally or self-hosted, all wired together with Pipecat on the same Cloudflare SFU transport built here. The goal is to see how far you can get on a zero-API-cost model stack, and what the latency and quality tradeoffs look like compared to a managed realtime model. Stay tuned.
 
 ---
 
